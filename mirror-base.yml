@@ -1,0 +1,56 @@
+# Shared base for every spec in this repository (Kubernetes SIGs tooling).
+#
+# NOT a spec: it has no name/target/source and is never loaded on its own.
+# Everything a package owns — name, target, source, assets, asset_type,
+# bin_scan, metadata, catalog, tests, versions, annotations, announce — stays
+# in that package's own mirror.yml.
+#
+# ⚠️ `extends:` is a SHALLOW merge of top-level keys. A spec that sets a key
+# below replaces that block OUTRIGHT — there is no per-key merge. `platforms:`
+# is where this bites: it carries BOTH the runner matrix and the container
+# legs, so a child that restates it to tweak one runner silently drops every
+# `containers:` entry. Nothing reds — the legs simply stop existing, and every
+# `os.features` claim in that spec goes back to being merely asserted.
+#
+# WHICH IS WHY THERE IS NO `platforms:` BLOCK HERE. The two packages in this
+# repo have different asset shapes (kind: raw unversioned binaries; kustomize:
+# flat tarballs/zip) and different upstream platform coverage (kind ships no
+# windows/arm64, kustomize does), and the container matrix is downstream of a
+# per-package libc measurement. Keeping the matrix beside the evidence that
+# justifies it — in each spec — is what mirror-kitware does and is the only
+# arrangement in which a partial restatement cannot silently drop a leg. Only
+# genuinely repo-wide policy lives below.
+
+skip_prereleases: true
+cascade: true
+
+# `date`, not `none`. A cascade tag (`latest`, `0`, `0.32`) re-points on every
+# re-publish, and without a build segment the new manifest reuses the bare
+# version tag, orphaning the prior digest for registry GC to reap — which
+# breaks any `@sha256:` pin in a consumer's ocx.lock. The documented exception
+# (an upstream version that already carries semver build metadata, where `date`
+# empties the mirror) does not apply here: both packages version as plain
+# semver — `0.32.0`, `5.8.1`.
+build_timestamp: date
+
+verify:
+  # github_release sources only: reads the digest GitHub records for each asset
+  # back and compares it against the bytes downloaded.
+  github_asset_digest: true
+
+concurrency:
+  # Assets are single static Go binaries, 5–13 MB each.
+  max_downloads: 8
+  max_bundles: 4
+  max_pushes: 2
+  rate_limit_ms: 100
+  # Extra attempts a TRANSIENT push failure (exit 75) gets on top of the first.
+  # Honoured since ocx-mirror 0.5.2; asset DOWNLOADS in `prepare` are still a
+  # single unguarded attempt.
+  max_retries: 3
+  compression_threads: 0
+
+notify:
+  discord:
+    webhook_secret: OCX_MIRROR_DISCORD_HOOK
+    user_id: "227748867204972545"  # pinged in-message on failures
