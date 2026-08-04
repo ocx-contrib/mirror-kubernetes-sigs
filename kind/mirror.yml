@@ -81,9 +81,9 @@ assets:
     - "^kind-darwin-amd64$"
   darwin/arm64:
     - "^kind-darwin-arm64$"
-  # ── PASS 3 (windows) ──────────────────────────────────────────────────────
-  # windows/amd64:
-  #   - "^kind-windows-amd64$"
+  # ── PASS 3 (windows) — LANDED ─────────────────────────────────────────────
+  windows/amd64:
+    - "^kind-windows-amd64$"
   # windows/arm64: NOT DECLARED — upstream ships no windows/arm64 asset.
   #   Verified on v0.30.0, v0.31.0 and v0.32.0: the only Windows entry in each
   #   release is `kind-windows-amd64`. This is an evidenced exclusion, not an
@@ -197,10 +197,10 @@ platforms:
   darwin/arm64:
     runner: macos-14
     shell: bash
-  # ── PASS 3 (windows) ──────────────────────────────────────────────────────
-  # windows/amd64:
-  #   runner: windows-latest
-  #   shell: pwsh
+  # ── PASS 3 (windows) — LANDED ─────────────────────────────────────────────
+  windows/amd64:
+    runner: windows-latest
+    shell: pwsh
   # windows/arm64: NOT DECLARED — no upstream asset (evidence above `assets:`).
   #
   # No `containers:` on darwin or windows — those runners have no Linux
