@@ -76,11 +76,11 @@ assets:
     - "^kind-linux-amd64$"
   linux/arm64:
     - "^kind-linux-arm64$"
-  # ── PASS 2 (darwin) — uncomment WITH the matching `platforms:` keys below ──
-  # darwin/amd64:
-  #   - "^kind-darwin-amd64$"
-  # darwin/arm64:
-  #   - "^kind-darwin-arm64$"
+  # ── PASS 2 (darwin) — LANDED ──────────────────────────────────────────────
+  darwin/amd64:
+    - "^kind-darwin-amd64$"
+  darwin/arm64:
+    - "^kind-darwin-arm64$"
   # ── PASS 3 (windows) ──────────────────────────────────────────────────────
   # windows/amd64:
   #   - "^kind-windows-amd64$"
@@ -188,15 +188,15 @@ platforms:
       - { image: "ubuntu:24.04", shell: bash }
       - { image: "alpine:3.20",  shell: sh }
       - { image: "fedora:40",    shell: bash }
-  # ── PASS 2 (darwin) ───────────────────────────────────────────────────────
-  # darwin/amd64:
-  #   # Intel slice tested on the arm64 macos-14 runner via Rosetta 2 — GitHub's
-  #   # native macos-13 Intel pool is exhausted and deadlocks the push job.
-  #   runner: macos-14
-  #   prefix: ["arch", "-x86_64"]
-  # darwin/arm64:
-  #   runner: macos-14
-  #   shell: bash
+  # ── PASS 2 (darwin) — LANDED ──────────────────────────────────────────────
+  darwin/amd64:
+    # Intel slice tested on the arm64 macos-14 runner via Rosetta 2 — GitHub's
+    # native macos-13 Intel pool is exhausted and deadlocks the push job.
+    runner: macos-14
+    prefix: ["arch", "-x86_64"]
+  darwin/arm64:
+    runner: macos-14
+    shell: bash
   # ── PASS 3 (windows) ──────────────────────────────────────────────────────
   # windows/amd64:
   #   runner: windows-latest
