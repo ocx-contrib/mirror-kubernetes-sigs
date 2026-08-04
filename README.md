@@ -7,6 +7,7 @@ directory per package.
 | Package | Spec | Publishes to | Announced as | Upstream SPDX |
 |---|---|---|---|---|
 | [kind](https://github.com/kubernetes-sigs/kind) | [`kind/mirror.yml`](kind/mirror.yml) | `ghcr.io/ocx-contrib/kubernetes-sigs/kind` | `ocx.sh/kubernetes-sigs/kind` | `Apache-2.0` |
+| [kustomize](https://github.com/kubernetes-sigs/kustomize) | [`kustomize/mirror.yml`](kustomize/mirror.yml) | `ghcr.io/ocx-contrib/kubernetes-sigs/kustomize` | `ocx.sh/kubernetes-sigs/kustomize` | `Apache-2.0` |
 
 Each upstream release is discovered, re-bundled, smoke-tested per
 `(version, platform)` and only then pushed with cascade tags, after which the
@@ -17,6 +18,7 @@ result is announced into the OCX index.
 ```
 mirror-base.yml         repo-wide policy every spec inherits via `extends:`
 kind/                   one directory per package — same five files each
+kustomize/
 ├── mirror.yml          the spec — never at the repo root
 ├── metadata.json       bundle interface
 ├── CATALOG.md          → ocx package describe
@@ -68,6 +70,26 @@ rather than synthesising one: `kind-windows-amd64` has no `.exe`, so
 platform. Both were measured with a local `pipeline prepare`, no runner
 involved.
 
+`kustomize` publishes **six** platform entries — both Linux arches, both macOS
+arches and both Windows arches — everything upstream builds that OCX can
+express. Its `linux/ppc64le` and `linux/s390x` archives are dropped rather than
+excluded: OCX's architecture enum has only `amd64` and `arm64`, so they cannot
+be written as platform keys at all.
+
+Its archives are **flat** — a single `kustomize` executable at the archive
+root, `kustomize.exe` in the Windows `.zip`, nothing beside it — so
+`strip_components: 0` puts the binary at the content root and PATH is again a
+bare `${installPath}`. The Windows member already carries `.exe` upstream, so
+unlike `kind` it needs no rename.
+
+One trap is worth naming: **`kubernetes-sigs/kustomize` is a Go multi-module
+monorepo**, and `api/*`, `kyaml/*` and `cmd/config/*` all cut their own
+releases on the same repository with their own, unrelated version numbers. The
+spec's `tag_pattern` is anchored on the literal `kustomize/` prefix for that
+reason. An unanchored pattern would mirror `api/v0.21.1` as "kustomize 0.21.1"
+— a release carrying no kustomize assets, so the platform set would resolve
+empty and the run would stay **green**.
+
 ## Editing
 
 | File | Edit | Regenerate after |
@@ -79,7 +101,8 @@ involved.
 
 ```bash
 ocx-mirror package pipeline generate ci \
-  --spec kind/mirror.yml
+  --spec kind/mirror.yml \
+  --spec kustomize/mirror.yml
 ```
 
 **Name every spec.** `--spec` *appends* rather than replaces, so a command

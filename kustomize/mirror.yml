@@ -1,0 +1,239 @@
+extends: ../mirror-base.yml
+
+name: kustomize
+
+# Logical index package `kubernetes-sigs/kustomize` at the physical path
+# `ghcr.io/ocx-contrib/kubernetes-sigs/kustomize` — slash segments, never
+# hyphen-flattened. The first segment must be this repo's own GitHub owner:
+# GITHUB_TOKEN only authorises packages owned by the repo the workflow runs in.
+target:
+  registry: ghcr.io
+  repository: ocx-contrib/kubernetes-sigs/kustomize
+
+source:
+  type: github_release
+  owner: kubernetes-sigs
+  repo: kustomize
+  # ⚠️ MONOREPO TAG ANCHOR — THIS PREFIX IS LOAD-BEARING.
+  #
+  # kubernetes-sigs/kustomize is a Go multi-module monorepo, and every module
+  # releases on its OWN tag prefix with its OWN, unrelated version numbers:
+  #
+  #   $ gh api "repos/kubernetes-sigs/kustomize/releases?per_page=30" \
+  #       --jq '.[].tag_name'
+  #   kyaml/v0.21.1        ← library
+  #   kustomize/v5.8.1     ← THE CLI — the only train this mirror carries
+  #   cmd/config/v0.21.1   ← library
+  #   api/v0.21.1          ← library
+  #   …
+  #
+  # An unanchored pattern such as `v(?P<version>\d+\.\d+\.\d+)$` matches ALL of
+  # them and would mirror `api/v0.21.1` as if it were kustomize 0.21.1 — a
+  # version that does not exist, whose release carries no kustomize assets at
+  # all, so the platform set resolves empty and the run stays GREEN. Anchoring
+  # on the literal `kustomize/` prefix is the only thing preventing that.
+  #
+  # The `(?P<version>…)` group starts AFTER the prefix and after the `v`, so
+  # the extracted version is `5.8.1`, not `kustomize/v5.8.1` — the prefix never
+  # reaches the published tag. Verified against
+  # `ocx-mirror package pipeline plan`, which emits exactly 5.7.1 / 5.8.0 /
+  # 5.8.1 for this pattern (source/github_release.rs takes the version solely
+  # from the named capture group).
+  tag_pattern: "^kustomize/v(?P<version>\\d+\\.\\d+\\.\\d+)$"
+
+# ─── libc gate (Phase 3.5) — the evidence, not the conclusion ───────────────
+#
+# kustomize is a pure-Go, cgo-free build, so upstream ships ONE Linux build per
+# arch and it is fully static. Measured on BOTH ends of the range — v5.8.1
+# (newest) and v5.7.1 (oldest in range) — on both arches:
+#
+#   $ file x581a/kustomize
+#   ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked,
+#   BuildID[sha1]=11b7b3d4…, stripped
+#   $ readelf -l x581a/kustomize | grep -c INTERP   → 0
+#   $ readelf -d x581a/kustomize | grep -c NEEDED   → 0
+#   $ strings -a x581a/kustomize | grep -c '^UPX'   → 0
+#
+#   $ file x581r/kustomize
+#   ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically
+#   linked, BuildID[sha1]=fc6d59c3…, stripped        INTERP 0, NEEDED 0, UPX 0
+#   $ file x571a/kustomize   → x86-64,  statically linked   INTERP 0, NEEDED 0
+#   $ file x571r/kustomize   → aarch64, statically linked   INTERP 0, NEEDED 0
+#
+# No PT_INTERP, no DT_NEEDED, and no UPX stub to make a packed binary merely
+# LOOK static: the artifact requires nothing of the host userland, so both
+# Linux keys are BARE. `os.features` states what the artifact REQUIRES, so
+# tagging a static build `+libc.musl` would be a false requirement that hid it
+# from every glibc host. Upstream publishes no musl/gnu split. The
+# `alpine:3.20` container leg below is what turns the universal claim into
+# evidence.
+#
+# ─── Scope (verified BOTH ways on kustomize/v5.7.1, v5.8.0 and v5.8.1 — the
+#     whole in-range set) ────────────────────────────────────────────────────
+#
+#   $ gh api repos/kubernetes-sigs/kustomize/releases/tags/kustomize/v<V> \
+#       --jq '.assets[].name'
+#
+# returns nine assets on each: eight platform archives plus `checksums.txt`.
+# Every pattern below matched EXACTLY ONE asset on every in-range release, and
+# the asset names AGREE with their tag (v5.7.1's archives are all named
+# `kustomize_v5.7.1_…`) — the "upstream shipped the previous release's binaries
+# under a new tag" trap does not apply here. A pattern matching zero is
+# SILENTLY SKIPPED, not an error.
+#
+# The literal `\d+\.\d+\.\d+` after `kustomize_v` is what keeps `checksums.txt`
+# out and pins each pattern to a versioned archive; `^`/`$` anchoring keeps any
+# future sidecar (`.sha256`, `.sig`, `.asc`) out too.
+#
+# Upstream also publishes, and this mirror CANNOT carry:
+#   kustomize_v<V>_linux_ppc64le.tar.gz
+#   kustomize_v<V>_linux_s390x.tar.gz
+# These are not a judgement call and need no exclusion note beyond this one:
+# OCX's architecture enum has only `amd64` and `arm64`
+# (`ocx_lib/src/oci/platform/architecture.rs`), so ppc64le and s390x cannot be
+# expressed as platform keys at all. They are dropped, not excluded.
+#
+# Unlike its sibling `kind`, kustomize DOES ship windows/arm64 — declared in
+# PASS 3 below.
+assets:
+  linux/amd64:
+    - "^kustomize_v\\d+\\.\\d+\\.\\d+_linux_amd64\\.tar\\.gz$"
+  linux/arm64:
+    - "^kustomize_v\\d+\\.\\d+\\.\\d+_linux_arm64\\.tar\\.gz$"
+  # ── PASS 2 (darwin) — uncomment WITH the matching `platforms:` keys below ──
+  # darwin/amd64:
+  #   - "^kustomize_v\\d+\\.\\d+\\.\\d+_darwin_amd64\\.tar\\.gz$"
+  # darwin/arm64:
+  #   - "^kustomize_v\\d+\\.\\d+\\.\\d+_darwin_arm64\\.tar\\.gz$"
+  # ── PASS 3 (windows) — .zip here, not .tar.gz ─────────────────────────────
+  # windows/amd64:
+  #   - "^kustomize_v\\d+\\.\\d+\\.\\d+_windows_amd64\\.zip$"
+  # windows/arm64:
+  #   - "^kustomize_v\\d+\\.\\d+\\.\\d+_windows_arm64\\.zip$"
+
+asset_type:
+  # FLAT archive on every platform — one entry, no wrapper directory, nothing
+  # else beside it. `archive` covers both container formats; the tar/zip choice
+  # is made from the asset itself, which is why the .zip Windows assets need no
+  # per-platform override. Verified by `tar tvf` / `unzip -l` on v5.8.1
+  # (linux/amd64, linux/arm64, darwin/arm64, windows/amd64) and on v5.7.1
+  # (linux/amd64, linux/arm64):
+  #
+  #   $ tar tvf kustomize_v5.8.1_linux_amd64.tar.gz
+  #   -rwxr-xr-x runner/runner 12660920 2026-02-09 17:15 kustomize
+  #   $ unzip -l kustomize_v5.8.1_windows_amd64.zip
+  #    13126656  02-09-2026 17:17   kustomize.exe
+  #
+  # A single executable AT THE ARCHIVE ROOT, so there is nothing to strip:
+  # `strip_components: 0` extracts it straight to the content root, which is
+  # why metadata.json's PATH is a bare ${installPath} and `bin_scan` stays
+  # `off`. `strip_components: 1` on a flat archive would DELETE the binary.
+  #
+  # The Windows member already carries `.exe` upstream, so — unlike this repo's
+  # `kind` spec — nothing has to be renamed here.
+  type: archive
+  strip_components: 0
+
+# `off`, and it cannot be otherwise. The scan only looks BELOW an
+# interface-visible PATH entry of the form ${installPath}/<dir>; a flat archive
+# extracted with `strip_components: 0` puts its single executable AT the
+# content root, so PATH is a bare ${installPath} and there is nothing below it
+# to scan. `auto`/`verify` is rejected at spec load with exit 65. `off` plus a
+# hand-listed `binaries` in metadata.json is the blessed shape here.
+bin_scan: off
+
+metadata:
+  default: metadata.json
+
+catalog:
+  # Resolves against THIS spec's directory (unlike `tests[].script`, which
+  # resolves from the repository root).
+  logo: logo.svg
+
+versions:
+  # 5.7.1 is the recon-assigned floor. All three in-range releases (5.7.1,
+  # 5.8.0, 5.8.1) pass the both-ways platform check above, ship the same flat
+  # single-binary archive, and render tests/smoke.star's fixture to
+  # byte-identical output.
+  min: "5.7.1"
+  new_per_run: 5
+  # Without this the generated workflow only fires on workflow_dispatch + push
+  # and never auto-discovers a new upstream release. The minute is staggered
+  # against this repo's other spec so they do not hit the releases API together.
+  poll_interval: "38 */6 * * *"
+
+tests:
+  # `script:` resolves from the REPOSITORY ROOT — unlike `metadata.default` and
+  # `catalog.logo` above, which resolve against this spec's own directory.
+  - name: smoke
+    script: kustomize/tests/smoke.star
+
+# ─── Platform matrix — RESTATED IN FULL, not merged ─────────────────────────
+#
+# ../mirror-base.yml carries NO `platforms:` block, precisely so that this one
+# cannot be a partial restatement of anything. Every key this spec declares
+# appears below with its complete `containers:` list.
+#
+# Only PASS 1 (Linux) is live. A platform declared here but absent from
+# `assets:` does NOT cost nothing: the generated test matrix is static, so the
+# leg boots its runner, installs the toolchain, finds the platform missing from
+# every version's resolved set, skips, and reports SUCCESS — macOS at 10× and
+# Windows at 2× the minute rate to verify nothing. So the darwin/windows keys
+# are commented out alongside their `assets:` keys and uncommented in the same
+# edit, by hand (never by sed — a replacement rewrites `\\.` to `\.` inside an
+# asset regex), followed by `generate ci` naming EVERY spec in this repository.
+#
+# libc evidence for the bare Linux keys is above `assets:`; the alpine leg is
+# what makes the universal claim evidence rather than assertion. No
+# `containers[].setup` on any leg: kustomize is a static binary that reads and
+# writes local files only, and the smoke fixture is written into the test
+# sandbox — nothing is shelled out to.
+platforms:
+  linux/amd64:
+    runner: ubuntu-latest
+    containers:
+      - { image: "ubuntu:24.04", shell: bash }
+      - { image: "alpine:3.20",  shell: sh }
+      - { image: "fedora:40",    shell: bash }
+  linux/arm64:
+    # arm64 container legs run natively — no qemu — so the runner arch must
+    # match the platform or the renderer reds the leg up front.
+    runner: ubuntu-24.04-arm
+    containers:
+      - { image: "ubuntu:24.04", shell: bash }
+      - { image: "alpine:3.20",  shell: sh }
+      - { image: "fedora:40",    shell: bash }
+  # ── PASS 2 (darwin) ───────────────────────────────────────────────────────
+  # darwin/amd64:
+  #   # Intel slice tested on the arm64 macos-14 runner via Rosetta 2 — GitHub's
+  #   # native macos-13 Intel pool is exhausted and deadlocks the push job.
+  #   runner: macos-14
+  #   prefix: ["arch", "-x86_64"]
+  # darwin/arm64:
+  #   runner: macos-14
+  #   shell: bash
+  # ── PASS 3 (windows) ──────────────────────────────────────────────────────
+  # windows/amd64:
+  #   runner: windows-latest
+  #   shell: pwsh
+  # windows/arm64:
+  #   # Native arm64 Windows runner — the amd64 pool cannot execute an ARM64 PE.
+  #   runner: windows-11-arm
+  #   shell: pwsh
+  #
+  # No `containers:` on darwin or windows — those runners have no Linux
+  # container engine, and the key is rejected at spec load.
+
+annotations:
+  # From the Phase 1.5 license gate:
+  #   $ gh api repos/kubernetes-sigs/kustomize/license --jq '.license.spdx_id'
+  #   Apache-2.0
+  # The repo-level LICENSE covers the whole monorepo — kustomize/, api/ and
+  # kyaml/ all sit under it.
+  org.opencontainers.image.licenses: "Apache-2.0"
+
+announce:
+  # Spelled out, not derived from target.repository — the logical name and the
+  # physical path are related by convention only.
+  package: kubernetes-sigs/kustomize
+  fork: ocx-contrib/index

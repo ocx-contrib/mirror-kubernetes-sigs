@@ -13,6 +13,7 @@ and no endorsement is implied.
 | Package | GHCR path | Upstream SPDX |
 |---|---|---|
 | `kind` | `ghcr.io/ocx-contrib/kubernetes-sigs/kind` | `Apache-2.0` |
+| `kustomize` | `ghcr.io/ocx-contrib/kubernetes-sigs/kustomize` | `Apache-2.0` |
 
 ---
 
@@ -40,6 +41,38 @@ choice of either Apache-2.0 or CC-BY-4.0**
 (<https://github.com/kubernetes-sigs/kind/blob/main/logo/LICENSE>). It is used
 here for catalog identification. Kubernetes and the Kubernetes wheel are
 trademarks of The Linux Foundation.
+
+No modifications are made to any upstream artifact in this repository; they are
+republished byte-for-byte inside an OCX bundle.
+
+---
+
+## `kustomize`
+
+Upstream: <https://github.com/kubernetes-sigs/kustomize>
+Published to `ghcr.io/ocx-contrib/kubernetes-sigs/kustomize`.
+
+| Component | SPDX | Holder |
+|---|---|---|
+| kustomize (`kustomize`) | **Apache-2.0** | Copyright The Kubernetes Authors |
+
+Permissive; redistribution of the compiled binary is granted under the terms of
+<https://github.com/kubernetes-sigs/kustomize/blob/master/LICENSE>. Verified
+via `gh api repos/kubernetes-sigs/kustomize/license --jq '.license.spdx_id'` →
+`Apache-2.0`. The repository is a Go multi-module monorepo and the single
+top-level `LICENSE` covers every module in it — `kustomize/`, `api/` and
+`kyaml/` alike; only the `kustomize/` CLI train is mirrored here. Upstream's
+release archives contain the binary alone with no bundled `LICENSE` file, so
+the terms are referenced here rather than travelling with the artifact.
+
+The binary is a pure-Go static build that links third-party Go modules under
+permissive licenses, enumerated in upstream's `go.mod`.
+
+`kustomize/logo.png` is upstream's own site mark, taken from
+`site/static/favicons/favicon-1024.png` and downscaled to 512px;
+`kustomize/logo.svg` wraps that PNG (upstream publishes no vector original).
+It is used here for catalog identification. Kubernetes and the Kubernetes
+wheel are trademarks of The Linux Foundation.
 
 No modifications are made to any upstream artifact in this repository; they are
 republished byte-for-byte inside an OCX bundle.
