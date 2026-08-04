@@ -1,15 +1,32 @@
 # kind/tests/smoke.star — stable across upstream releases, and RUNTIME-FREE.
 #
 # kind drives a container runtime, so almost every headline verb needs Docker
-# or Podman. The container test legs have neither, and a network- or
-# daemon-dependent assertion would be a flake rather than a test. What IS
-# hermetic: kind's own version reporting, its provider enumeration (which
-# reports an empty set rather than failing when no runtime is present), and its
-# cluster-config parser, which validates the YAML it is handed BEFORE it ever
-# reaches for a runtime.
+# or Podman. The container test legs have neither, and a runtime-dependent
+# assertion would be an environment probe rather than a test. What IS hermetic:
+# kind's own version reporting, and its cluster-config parser, which reads and
+# validates the YAML it is handed BEFORE it ever reaches for a runtime.
 #
-# Assert on the contract — exit code, version shape, result count, and a token
-# echoed back out of a value we fed in. Never on help or banner prose.
+# ⚠️ TWO near-misses are recorded here, because both LOOK hermetic on a
+# developer box that happens to have Docker installed and are not:
+#
+#   `kind get clusters` — with Docker present but no clusters it exits 0 with
+#   empty stdout; with no runtime binary on PATH it exits 1 (`failed to list
+#   clusters: … exec: "docker": executable file not found in $PATH`). Measured
+#   on the alpine:3.20 leg of this repo's first CI run.
+#
+#   A config whose FIELD VALUES are invalid (`networking.ipFamily: klingon`) —
+#   kind probes the provider (`docker info`) BEFORE it schema-validates, so in
+#   a runtime-less image the failure is the docker error, not the validation
+#   error. The rejection is real either way, but the MESSAGE is not stable
+#   across legs, and asserting it would be asserting the environment.
+#
+# Only the DECODE stage runs ahead of the provider probe, so only decode-stage
+# rejections are usable. Both cases below are decode-stage, verified inside
+# `docker run --rm alpine:3.20` with no runtime present. Dropped rather than
+# weakened.
+#
+# Assert on the contract — exit code, version shape, and tokens echoed back out
+# of values we fed in. Never on help or banner prose.
 
 KIND = "kind.exe" if ocx.target_platform.os == ocx.os.Windows else "kind"
 
@@ -24,28 +41,41 @@ r_version = ocx.run(KIND, "version")
 expect.ok(r_version)
 expect.matches(r_version.stdout, r"\d+\.\d+\.\d+")
 
-# ── Tier 3a: provider enumeration returns an EMPTY SET, not an error ────────
-# Asserting the COUNT (zero clusters ⇒ nothing on stdout), not the exit code
-# alone: kind prints "No kind clusters found." to STDERR and leaves stdout
-# empty, so an empty stdout is the result, and a binary that had printed
-# anything here would have found a cluster that does not exist.
-r_list = ocx.run(KIND, "get", "clusters")
-expect.ok(r_list)
-expect.eq(r_list.stdout, "")
+# ── Tier 3: the config DECODER reads both type fields, and discriminates ────
+# `create cluster` decodes its `--config` — reading `apiVersion` and `kind` and
+# resolving them against its registered scheme — before it probes for a
+# container runtime. Two rejections, not one, and deliberately for DIFFERENT
+# reasons: a tool that merely passed its input through, or that blanket-refused
+# every `--config`, would produce the same outcome for both. Each error names
+# the offending token back to us, so what is asserted is derived from input we
+# chose, not vendor prose. This pair is also the proof that a RED outcome is
+# reachable from this script at all. Both messages measured byte-identical on
+# v0.30.0 (oldest in range) and v0.32.0 (newest), inside alpine:3.20 with no
+# container runtime present.
 
-# ── Tier 3b: the config parser actually parses — NEGATIVE CONTROL ───────────
-# `create cluster` validates its `--config` against kind's own v1alpha4 schema
-# before touching any container runtime, so this path is hermetic. A tool that
-# merely passed its input through would happily accept `ipFamily: klingon`;
-# this fails non-zero and names the offending value back to us, which is a
-# computed result rather than prose. It is also the proof that a RED outcome is
-# reachable from this script at all.
+# (a) known apiVersion, unknown kind. The message echoes BOTH: it rejects
+#     `Custer` while naming `kind.x-k8s.io/v1alpha4` as a version it accepts,
+#     so this is a positive statement about the scheme as well as a rejection.
 ocx.write_file(
-    "bad-cluster.yaml",
-    "kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nnetworking:\n  ipFamily: klingon\n",
+    "bad-kind.yaml",
+    "kind: Custer\napiVersion: kind.x-k8s.io/v1alpha4\n",
 )
-r_bad = ocx.run(KIND, "create", "cluster", "--name", "ocx-smoke", "--config", "bad-cluster.yaml")
-expect.ne(r_bad.exit_code, 0)
-expect.contains(r_bad.stderr, "klingon")
+r_bad_kind = ocx.run(KIND, "create", "cluster", "--name", "ocx-smoke", "--config", "bad-kind.yaml")
+expect.ne(r_bad_kind.exit_code, 0)
+expect.contains(r_bad_kind.stderr, "Custer")
+expect.contains(r_bad_kind.stderr, "kind.x-k8s.io/v1alpha4")
+
+# (b) known kind, unknown apiVersion — the other field, rejected on its own.
+ocx.write_file(
+    "bad-apiversion.yaml",
+    "kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha1\n",
+)
+r_bad_api = ocx.run(KIND, "create", "cluster", "--name", "ocx-smoke", "--config", "bad-apiversion.yaml")
+expect.ne(r_bad_api.exit_code, 0)
+expect.contains(r_bad_api.stderr, "kind.x-k8s.io/v1alpha1")
+
+# Different inputs must fail differently — otherwise the pair proves only that
+# `--config` is refused, which is not the claim being made.
+expect.ne(r_bad_api.stderr, r_bad_kind.stderr)
 
 # No Tier 4: metadata.json declares PATH only, and Tier 1 already proved it.
