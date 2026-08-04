@@ -148,7 +148,7 @@ versions:
   # Without this the generated workflow only fires on workflow_dispatch + push
   # and never auto-discovers a new upstream release. The minute is staggered
   # against this repo's other spec so they do not hit the releases API together.
-  poll_interval: "37 */6 * * *"
+  poll_interval: "24 1-23/6 * * *"
 
 tests:
   # `script:` resolves from the REPOSITORY ROOT — unlike `metadata.default` and
